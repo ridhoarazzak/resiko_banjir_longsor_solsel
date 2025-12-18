@@ -50,10 +50,11 @@
             box-shadow: 0 0 15px rgba(0,0,0,0.2); border-radius: 5px;
             font-size: 12px;
             max-height: 300px; overflow-y: auto;
+            min-width: 150px;
         }
         .legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.7; }
         .legend h4 { margin: 0 0 5px; font-size: 14px; border-bottom: 1px solid #ccc; padding-bottom: 3px;}
-        .legend-section { margin-bottom: 10px; }
+        .legend-section { margin-bottom: 12px; }
 
         /* Custom Popup */
         .custom-popup .leaflet-popup-content-wrapper { border-radius: 5px; }
@@ -73,7 +74,7 @@
         </div>
         <div>
             <a href="#" style="color:white; text-decoration:none;">
-                <i class="fa-solid fa-info-circle"></i>
+                <i class="fa-solid fa-info-circle"></i> Info
             </a>
         </div>
     </div>
@@ -102,15 +103,12 @@
         // ==========================================
         
         const apiKey = '3a3e47a47e051b4cd78e04d4a50f0c8c';
-        var weatherMarker = null; // Variabel untuk menyimpan marker cuaca agar bisa dihapus
+        var weatherMarker = null;
 
         function fetchRainData(lat, lon) {
-            // Hapus marker sebelumnya jika ada
             if (weatherMarker) {
                 map.removeLayer(weatherMarker);
             }
-
-            // Tampilkan text loading sementara di console atau UI (opsional)
             document.body.style.cursor = 'wait'; 
 
             const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric&lang=id`;
@@ -120,12 +118,10 @@
                 .then(data => {
                     document.body.style.cursor = 'default';
                     
-                    // Ambil data hujan (jika ada)
                     const rain1h = (data.rain && data.rain['1h']) ? data.rain['1h'] : 0;
-                    const weatherDesc = data.weather[0].description; // misal: "hujan ringan"
+                    const weatherDesc = data.weather[0].description;
                     const temp = data.main.temp;
                     
-                    // Logika Status
                     let rainStatus = '';
                     let icon = '';
                     
@@ -137,7 +133,6 @@
                         icon = '☁️';
                     }
 
-                    // Buat konten Popup yang rapi
                     const popupContent = `
                         <div class="weather-popup" style="text-align:center;">
                             <b>${icon} Cuaca Saat Ini</b><br>
@@ -149,18 +144,15 @@
                         </div>
                     `;
 
-                    // Tambahkan Marker ke Peta
                     weatherMarker = L.marker([lat, lon]).addTo(map);
                     weatherMarker.bindPopup(popupContent).openPopup();
                 })
                 .catch(err => {
                     console.error('Gagal mengambil data cuaca:', err);
                     document.body.style.cursor = 'default';
-                    alert("Gagal mengambil data cuaca. Cek koneksi internet.");
                 });
         }
 
-        // Event Listener: Klik Peta untuk Cek Hujan
         map.on('click', function(e) {
             fetchRainData(e.latlng.lat, e.latlng.lng);
         });
@@ -169,7 +161,6 @@
         //  DATA GEOJSON (Banjir & Longsor)
         // ==========================================
 
-        // Style Functions
         function styleBanjir(feature) {
             var level = feature.properties.level;
             var color = '#FFEDA0';
@@ -192,12 +183,14 @@
             if (feature.properties) {
                 var color = 'gray';
                 var val = feature.properties.level;
+                var type = feature.properties.type || 'Bencana';
+                
                 if(val === 'High') color = 'red';
                 if(val === 'Medium') color = 'orange';
 
                 var content = `
                     <div style="font-family: sans-serif;">
-                        <h4 style="margin:0;">Risiko ${feature.properties.type || 'Bencana'}</h4>
+                        <h4 style="margin:0;">Risiko ${type}</h4>
                         <hr style="margin:5px 0;">
                         Level: <span class="risk-badge" style="background:${color}">${val}</span>
                     </div>
@@ -209,7 +202,6 @@
         var banjirLayer = L.geoJSON(null, { style: styleBanjir, onEachFeature: onEachFeature });
         var longsorLayer = L.geoJSON(null, { style: styleLongsor, onEachFeature: onEachFeature });
 
-        // Load Data
         async function loadData() {
             var loader = document.getElementById('loading');
             loader.style.display = 'block';
@@ -225,14 +217,13 @@
                 banjirLayer.addTo(map); 
                 map.fitBounds(banjirLayer.getBounds());
             } catch (err) {
-                console.log("Info: File GeoJSON tidak ditemukan atau error loading.");
+                console.log("Info: File GeoJSON mungkin belum ada di server.");
             } finally {
                 loader.style.display = 'none';
             }
         }
         loadData();
 
-        // Control Layers
         var baseMaps = { "Satelit": satellite, "Peta Jalan": osm };
         var overlayMaps = {
             "<span style='color:red'>Risiko Banjir</span>": banjirLayer,
@@ -240,17 +231,29 @@
         };
         L.control.layers(baseMaps, overlayMaps, {collapsed: false}).addTo(map);
 
-        // Legend
+        // ==========================================
+        //  LEGENDA (DIPERBAIKI)
+        // ==========================================
         var legend = L.control({position: 'bottomright'});
         legend.onAdd = function (map) {
             var div = L.DomUtil.create('div', 'legend');
-            div.innerHTML += '<div class="legend-section"><strong>Info Penggunaan</strong><br>';
-            div.innerHTML += '<i class="fa-solid fa-hand-pointer" style="width:auto; float:none;"></i> Klik peta untuk cek<br>curah hujan real-time.</div>';
             
-            div.innerHTML += '<div class="legend-section"><strong>Risiko Banjir</strong><br>';
-            div.innerHTML += '<i style="background: #d32f2f"></i> Tinggi<br>';
-            div.innerHTML += '<i style="background: #f57c00"></i> Sedang<br>';
-            div.innerHTML += '<i style="background: #fbc02d"></i> Rendah</div>';
+            // Info Klik
+            div.innerHTML += '<div class="legend-section" style="border-bottom:1px solid #ddd; padding-bottom:5px;">';
+            div.innerHTML += '<strong>Info Interaktif</strong><br>';
+            div.innerHTML += '<i class="fa-solid fa-hand-pointer" style="width:auto; float:none; margin-right:5px;"></i> Klik peta untuk<br>cek cuaca real-time.</div>';
+            
+            // Legenda Banjir
+            div.innerHTML += '<div class="legend-section"><strong>Risiko Banjir (HAND)</strong><br>';
+            div.innerHTML += '<i style="background: #d32f2f"></i> Tinggi (< 2m)<br>';
+            div.innerHTML += '<i style="background: #f57c00"></i> Sedang (2-5m)<br>';
+            div.innerHTML += '<i style="background: #fbc02d"></i> Rendah (5-10m)</div>';
+            
+            // Legenda Longsor (SUDAH DITAMBAHKAN KEMBALI)
+            div.innerHTML += '<div class="legend-section"><strong>Risiko Longsor (Slope)</strong><br>';
+            div.innerHTML += '<i style="background: #880e4f"></i> Tinggi (> 40°)<br>';
+            div.innerHTML += '<i style="background: #c2185b"></i> Sedang (20-40°)<br>';
+            div.innerHTML += '<i style="background: #f48fb1"></i> Rendah (10-20°)</div>';
             
             return div;
         };
