@@ -3,10 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Peta Risiko Banjir & Longsor - Solok Selatan</title>
+    <title>Peta Risiko & Pantauan Hujan - Solok Selatan</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 
     <style>
@@ -29,14 +28,14 @@
         #header small { color: #aaa; font-size: 0.8rem; }
 
         /* Map Container */
-        #map { position: absolute; top: 60px; bottom: 0; width: 100%; z-index: 1; }
+        #map { position: absolute; top: 60px; bottom: 0; width: 100%; z-index: 1; cursor: crosshair; }
 
         /* Loading Spinner */
         #loading {
             position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
             z-index: 2000; background: rgba(255,255,255,0.9); padding: 20px;
             border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.2);
-            text-align: center; display: none; /* Hidden by default */
+            text-align: center; display: none;
         }
         .spinner {
             border: 4px solid #f3f3f3; border-top: 4px solid #3498db;
@@ -50,36 +49,38 @@
             background: white; padding: 10px; line-height: 1.5;
             box-shadow: 0 0 15px rgba(0,0,0,0.2); border-radius: 5px;
             font-size: 12px;
+            max-height: 300px; overflow-y: auto;
         }
         .legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.7; }
-        .legend h4 { margin: 0 0 5px; font-size: 14px; }
+        .legend h4 { margin: 0 0 5px; font-size: 14px; border-bottom: 1px solid #ccc; padding-bottom: 3px;}
+        .legend-section { margin-bottom: 10px; }
 
         /* Custom Popup */
-        .custom-popup .leaflet-popup-content-wrapper {
-            border-radius: 5px;
-        }
-        .risk-badge {
-            padding: 2px 6px; border-radius: 4px; color: white; font-weight: bold; font-size: 11px;
-        }
+        .custom-popup .leaflet-popup-content-wrapper { border-radius: 5px; }
+        .risk-badge { padding: 2px 6px; border-radius: 4px; color: white; font-weight: bold; font-size: 11px; }
+        
+        /* Popup Weather */
+        .weather-popup b { color: #0077b6; font-size: 1.1em; }
+        .weather-popup span { font-size: 0.9em; color: #555; }
     </style>
 </head>
 <body>
 
     <div id="header">
         <div>
-            <h2><i class="fa-solid fa-map-location-dot"></i> Peta Risiko Bencana</h2>
-            <small>Kabupaten Solok Selatan - Analisis HAND & Slope</small>
+            <h2><i class="fa-solid fa-cloud-showers-heavy"></i> Risiko & Pantauan Hujan</h2>
+            <small>Solok Selatan: Klik Peta untuk Cek Cuaca Real-time</small>
         </div>
         <div>
-            <a href="https://github.com/ridhoarazzak" target="_blank" style="color:white; text-decoration:none;">
-                <i class="fa-brands fa-github"></i> Info
+            <a href="#" style="color:white; text-decoration:none;">
+                <i class="fa-solid fa-info-circle"></i>
             </a>
         </div>
     </div>
 
     <div id="loading">
         <div class="spinner"></div>
-        <div id="loading-text">Memuat Data Peta...</div>
+        <div id="loading-text">Memuat Data...</div>
     </div>
 
     <div id="map"></div>
@@ -88,151 +89,171 @@
 
     <script>
         // 1. Inisialisasi Peta
-        var map = L.map('map').setView([-1.5, 101.2], 10); // Koordinat Solok Selatan
+        var map = L.map('map').setView([-1.5, 101.2], 10);
 
-        // 2. Base Maps (Latar Belakang)
-        var osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap'
-        });
+        // 2. Base Maps
+        var osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' });
+        var satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: '© Esri' });
 
-        var satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-            attribution: '© Esri'
-        });
-
-        // Set default basemap
         satellite.addTo(map);
 
-        // 3. Style Functions (Warna berdasarkan Level)
+        // ==========================================
+        //  INTEGRASI API CUACA (OPENWEATHERMAP)
+        // ==========================================
+        
+        const apiKey = '3a3e47a47e051b4cd78e04d4a50f0c8c';
+        var weatherMarker = null; // Variabel untuk menyimpan marker cuaca agar bisa dihapus
+
+        function fetchRainData(lat, lon) {
+            // Hapus marker sebelumnya jika ada
+            if (weatherMarker) {
+                map.removeLayer(weatherMarker);
+            }
+
+            // Tampilkan text loading sementara di console atau UI (opsional)
+            document.body.style.cursor = 'wait'; 
+
+            const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric&lang=id`;
+
+            fetch(url)
+                .then(res => res.json())
+                .then(data => {
+                    document.body.style.cursor = 'default';
+                    
+                    // Ambil data hujan (jika ada)
+                    const rain1h = (data.rain && data.rain['1h']) ? data.rain['1h'] : 0;
+                    const weatherDesc = data.weather[0].description; // misal: "hujan ringan"
+                    const temp = data.main.temp;
+                    
+                    // Logika Status
+                    let rainStatus = '';
+                    let icon = '';
+                    
+                    if (rain1h > 0) {
+                        rainStatus = `<span style="color:red; font-weight:bold;">Hujan: ${rain1h} mm/jam</span>`;
+                        icon = '🌧️';
+                    } else {
+                        rainStatus = `<span style="color:green; font-weight:bold;">Tidak Ada Hujan</span>`;
+                        icon = '☁️';
+                    }
+
+                    // Buat konten Popup yang rapi
+                    const popupContent = `
+                        <div class="weather-popup" style="text-align:center;">
+                            <b>${icon} Cuaca Saat Ini</b><br>
+                            <hr style="margin:5px 0;">
+                            <span style="text-transform:capitalize;">${weatherDesc}</span><br>
+                            ${rainStatus}<br>
+                            <small>Suhu: ${temp}°C</small><br>
+                            <small style="color:#aaa">Lokasi: ${lat.toFixed(4)}, ${lon.toFixed(4)}</small>
+                        </div>
+                    `;
+
+                    // Tambahkan Marker ke Peta
+                    weatherMarker = L.marker([lat, lon]).addTo(map);
+                    weatherMarker.bindPopup(popupContent).openPopup();
+                })
+                .catch(err => {
+                    console.error('Gagal mengambil data cuaca:', err);
+                    document.body.style.cursor = 'default';
+                    alert("Gagal mengambil data cuaca. Cek koneksi internet.");
+                });
+        }
+
+        // Event Listener: Klik Peta untuk Cek Hujan
+        map.on('click', function(e) {
+            fetchRainData(e.latlng.lat, e.latlng.lng);
+        });
+
+        // ==========================================
+        //  DATA GEOJSON (Banjir & Longsor)
+        // ==========================================
+
+        // Style Functions
         function styleBanjir(feature) {
             var level = feature.properties.level;
-            var color = '#FFEDA0'; // Default
-            if (level === 'High') color = '#d32f2f';      // Merah Gelap
-            if (level === 'Medium') color = '#f57c00';    // Oranye
-            if (level === 'Low') color = '#fbc02d';       // Kuning
-            
-            return {
-                fillColor: color,
-                weight: 0,
-                opacity: 1,
-                color: 'white',
-                dashArray: '3',
-                fillOpacity: 0.7
-            };
+            var color = '#FFEDA0';
+            if (level === 'High') color = '#d32f2f';
+            if (level === 'Medium') color = '#f57c00';
+            if (level === 'Low') color = '#fbc02d';
+            return { fillColor: color, weight: 0, opacity: 1, color: 'white', dashArray: '3', fillOpacity: 0.7 };
         }
 
         function styleLongsor(feature) {
             var level = feature.properties.level;
             var color = '#fff';
-            if (level === 'High') color = '#880e4f';      // Ungu/Merah Tua
-            if (level === 'Medium') color = '#c2185b';    // Pink Tua
-            if (level === 'Low') color = '#f48fb1';       // Pink Muda
-
-            return {
-                fillColor: color,
-                weight: 0,
-                opacity: 1,
-                color: 'white',
-                fillOpacity: 0.7
-            };
+            if (level === 'High') color = '#880e4f';
+            if (level === 'Medium') color = '#c2185b';
+            if (level === 'Low') color = '#f48fb1';
+            return { fillColor: color, weight: 0, opacity: 1, color: 'white', fillOpacity: 0.7 };
         }
 
-        // 4. Popup Interaktif
         function onEachFeature(feature, layer) {
             if (feature.properties) {
                 var color = 'gray';
-                if(feature.properties.level === 'High') color = 'red';
-                if(feature.properties.level === 'Medium') color = 'orange';
-                
+                var val = feature.properties.level;
+                if(val === 'High') color = 'red';
+                if(val === 'Medium') color = 'orange';
+
                 var content = `
                     <div style="font-family: sans-serif;">
-                        <h4 style="margin:0;">Risiko ${feature.properties.type}</h4>
+                        <h4 style="margin:0;">Risiko ${feature.properties.type || 'Bencana'}</h4>
                         <hr style="margin:5px 0;">
-                        Level: <span class="risk-badge" style="background:${color}">${feature.properties.level}</span><br>
-                        <small>Koordinat: ${layer.getBounds().getCenter().lat.toFixed(4)}, ${layer.getBounds().getCenter().lng.toFixed(4)}</small>
+                        Level: <span class="risk-badge" style="background:${color}">${val}</span>
                     </div>
                 `;
                 layer.bindPopup(content, {className: 'custom-popup'});
             }
         }
 
-        // 5. Load GeoJSON Data
         var banjirLayer = L.geoJSON(null, { style: styleBanjir, onEachFeature: onEachFeature });
         var longsorLayer = L.geoJSON(null, { style: styleLongsor, onEachFeature: onEachFeature });
 
-        // Fungsi Load Data
+        // Load Data
         async function loadData() {
             var loader = document.getElementById('loading');
-            var textLoader = document.getElementById('loading-text');
-            
             loader.style.display = 'block';
-
             try {
                 // Load Banjir
-                textLoader.innerText = "Memuat Data Banjir...";
                 const resBanjir = await fetch('Risiko_Banjir_SolokSelatan_Lengkap.geojson');
-                if(!resBanjir.ok) throw new Error("Gagal load file Banjir");
-                const dataBanjir = await resBanjir.json();
-                banjirLayer.addData(dataBanjir);
+                if(resBanjir.ok) banjirLayer.addData(await resBanjir.json());
 
                 // Load Longsor
-                textLoader.innerText = "Memuat Data Longsor...";
                 const resLongsor = await fetch('Risiko_Longsor_SolokSelatan_Lengkap.geojson');
-                if(!resLongsor.ok) throw new Error("Gagal load file Longsor");
-                const dataLongsor = await resLongsor.json();
-                longsorLayer.addData(dataLongsor);
+                if(resLongsor.ok) longsorLayer.addData(await resLongsor.json());
 
-                // Add to Map (Default Banjir nyala)
                 banjirLayer.addTo(map); 
-                // Longsor dimatikan dulu biar tidak berat/penuh
-                // longsorLayer.addTo(map); 
-
-                // Zoom ke area data
                 map.fitBounds(banjirLayer.getBounds());
-
             } catch (err) {
-                alert("Error: " + err.message + "\nPastikan file GeoJSON ada di folder yang sama dan dijalankan lewat Server.");
-                console.error(err);
+                console.log("Info: File GeoJSON tidak ditemukan atau error loading.");
             } finally {
                 loader.style.display = 'none';
             }
         }
-
-        // Jalankan Load Data
         loadData();
 
-        // 6. Layer Control (Tombol Ganti Layer)
-        var baseMaps = {
-            "Satelit": satellite,
-            "Peta Jalan": osm
-        };
-
+        // Control Layers
+        var baseMaps = { "Satelit": satellite, "Peta Jalan": osm };
         var overlayMaps = {
             "<span style='color:red'>Risiko Banjir</span>": banjirLayer,
             "<span style='color:purple'>Risiko Longsor</span>": longsorLayer
         };
-
         L.control.layers(baseMaps, overlayMaps, {collapsed: false}).addTo(map);
 
-        // 7. Legenda Peta
+        // Legend
         var legend = L.control({position: 'bottomright'});
-
         legend.onAdd = function (map) {
             var div = L.DomUtil.create('div', 'legend');
-            div.innerHTML += '<h4>Legenda Risiko</h4>';
+            div.innerHTML += '<div class="legend-section"><strong>Info Penggunaan</strong><br>';
+            div.innerHTML += '<i class="fa-solid fa-hand-pointer" style="width:auto; float:none;"></i> Klik peta untuk cek<br>curah hujan real-time.</div>';
             
-            div.innerHTML += '<strong>Banjir (HAND)</strong><br>';
-            div.innerHTML += '<i style="background: #d32f2f"></i> Tinggi (< 2m)<br>';
-            div.innerHTML += '<i style="background: #f57c00"></i> Sedang (2-5m)<br>';
-            div.innerHTML += '<i style="background: #fbc02d"></i> Rendah (5-10m)<br><br>';
-
-            div.innerHTML += '<strong>Longsor (Slope)</strong><br>';
-            div.innerHTML += '<i style="background: #880e4f"></i> Tinggi (> 30°)<br>';
-            div.innerHTML += '<i style="background: #c2185b"></i> Sedang (15-30°)<br>';
-            div.innerHTML += '<i style="background: #f48fb1"></i> Rendah (8-15°)<br>';
-
+            div.innerHTML += '<div class="legend-section"><strong>Risiko Banjir</strong><br>';
+            div.innerHTML += '<i style="background: #d32f2f"></i> Tinggi<br>';
+            div.innerHTML += '<i style="background: #f57c00"></i> Sedang<br>';
+            div.innerHTML += '<i style="background: #fbc02d"></i> Rendah</div>';
+            
             return div;
         };
-
         legend.addTo(map);
 
     </script>
